@@ -15,10 +15,10 @@
     button { cursor: pointer; }
     button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid #38bdf8; outline-offset: 2px; }
     
-    header { background: #1b365d; color: white; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px; box-shadow: 0 2px 8px #0002; position: relative; z-index: 1001; min-height: 56px; flex-shrink: 0; }
-    header h1 { font-size: 1.05rem; font-weight: 700; margin: 0; }
-    .header-btns { display: flex; gap: 6px; }
-    .btn { background: #0088cc; color: white; border: none; padding: 9px 12px; border-radius: 6px; font-size: .88rem; font-weight: 650; }
+    header { background: #1b365d; color: white; padding: 8px 10px; display: flex; justify-content: space-between; align-items: center; gap: 6px; box-shadow: 0 2px 8px #0002; position: relative; z-index: 1001; min-height: 52px; flex-shrink: 0; }
+    header h1 { font-size: 0.95rem; font-weight: 700; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .header-btns { display: flex; gap: 4px; flex-shrink: 0; }
+    .btn { background: #0088cc; color: white; border: none; padding: 7px 10px; border-radius: 6px; font-size: .8rem; font-weight: 650; }
     .btn-secondary { background: #4a5568; }
     .btn-danger { background: #b91c1c; }
     
@@ -765,12 +765,40 @@
       }
     }
 
-    function exportCatches() {
-      const blob = new Blob([JSON.stringify(catches, null, 2)], { type: 'application/json;charset=utf-8' });
+    async function exportCatches() {
+      const dataStr = JSON.stringify(catches, null, 2);
+      const filename = `rheinfangbuch-backup-${new Date().toISOString().slice(0, 10)}.json`;
+
+      // Versuche den modernen Datei-Explorer (Zielordner auswählen) zu nutzen
+      if (window.showSaveFilePicker) {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: filename,
+            types: [{
+              description: 'JSON Backup',
+              accept: { 'application/json': ['.json'] }
+            }]
+          });
+          const writable = await handle.createWritable();
+          await writable.write(dataStr);
+          await writable.close();
+          showStatus('Backup erfolgreich im Zielordner gespeichert.');
+          return;
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            console.warn('FilePicker abgebrochen oder nicht unterstützt, nutze Standard-Download');
+          } else {
+            return; // Benutzer hat abgebrochen
+          }
+        }
+      }
+
+      // Fallback für Browser ohne Ordnerauswahl-API
+      const blob = new Blob([dataStr], { type: 'application/json;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `rheinfangbuch-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      link.download = filename;
       document.body.appendChild(link);
       link.click();
       link.remove();
