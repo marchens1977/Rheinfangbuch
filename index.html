@@ -22,7 +22,8 @@
     main { position: relative; flex: 1; width: 100%; height: 100%; overflow: hidden; }
 
     .view-page { position: absolute; top: 0; bottom: 0; left: 0; right: 0; width: 100%; height: 100%; display: none; background: #f4f6f9; overflow-y: auto; overscroll-behavior: contain; }
-    .view-page.active { display: flex; flex-direction: column; }
+    .view-page.active { display: flex; flex-direction: column; animation: fadeIn 0.2s ease-in-out; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     
     #page-home { background: #121824; color: white; align-items: center; justify-content: center; text-align: center; padding: 16px; overflow-y: auto; }
     .home-container { max-width: 480px; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 14px; margin: auto; }
@@ -37,7 +38,7 @@
     .home-start-btn:active { transform: scale(.98); }
     
     #page-map { overflow: hidden; position: absolute; top: 0; bottom: 0; left: 0; right: 0; width: 100%; height: 100%; }
-    #map { width: 100%; height: 100%; position: absolute; top: 0; bottom: 0; left: 0; right: 0; }
+    #map { width: 100%; height: 100%; position: absolute; top: 0; bottom: 0; left: 0; right: 0; z-index: 1; }
     .map-overlay-btn { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 500; background: #1b365d; color: white; border: none; padding: 12px 17px; border-radius: 30px; font-weight: 700; font-size: .92rem; box-shadow: 0 4px 12px #0005; white-space: nowrap; max-width: calc(100% - 24px); }
     
     .stats-bar { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 12px; background: #edf2f7; border-bottom: 1px solid #cbd5e0; }
@@ -71,16 +72,19 @@
     .backup-card { background: white; padding: 18px; border-radius: 10px; box-shadow: 0 2px 6px #0001; display: flex; flex-direction: column; gap: 10px; }
     .backup-card h3 { margin: 0; font-size: 1.1rem; color: #1b365d; }
 
-    .bottom-nav { min-height: 58px; padding-bottom: env(safe-area-inset-bottom); background: white; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-around; align-items: center; z-index: 1001; flex-shrink: 0; }
-    .nav-btn { background: none; border: none; min-height: 48px; padding: 5px 6px; font-size: .75rem; color: #718096; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-weight: 650; }
+    .bottom-nav { min-height: 58px; padding-bottom: env(safe-area-inset-bottom); background: white; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-around; align-items: center; z-index: 1000; flex-shrink: 0; box-shadow: 0 -2px 10px rgba(0,0,0,0.05); }
+    .nav-btn { background: none; border: none; min-height: 48px; padding: 5px 6px; font-size: .75rem; color: #718096; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-weight: 650; flex: 1; }
     .nav-btn.active { color: #0088cc; }
     .popup-img { width: 100%; max-height: 140px; object-fit: contain; border-radius: 4px; margin-top: 6px; }
     .empty-state { color: #718096; text-align: center; padding: 30px 16px; background: white; border-radius: 8px; }
     .hint { color: #64748b; font-size: .78rem; line-height: 1.4; }
-    .status-message { padding: 9px 12px; font-size: .88rem; line-height: 1.4; display: none; }
-    .status-message.show { display: block; }
-    .status-message.error { background: #fef2f2; color: #991b1b; border-bottom: 1px solid #fecaca; }
-    .status-message.success { background: #f0fdf4; color: #166534; border-bottom: 1px solid #bbf7d0; }
+    
+    .status-message { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 2000; padding: 10px 16px; border-radius: 8px; font-size: .88rem; line-height: 1.4; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.15); width: 90%; max-width: 400px; text-align: center; font-weight: 600; }
+    .status-message.show { display: block; animation: slideDown 0.3s ease-out; }
+    @keyframes slideDown { from { top: -50px; opacity: 0; } to { top: 10px; opacity: 1; } }
+    .status-message.error { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+    .status-message.success { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+    
     .gps-km-tooltip { background: #1b365d; color: #ffffff; border: 1px solid #38bdf8; font-weight: 700; padding: 2px 6px; border-radius: 4px; font-size: .75rem; box-shadow: 0 2px 6px #0004; }
   </style>
 </head>
@@ -249,22 +253,21 @@
       { km: 1030, lat: 51.9500, lng: 4.1200 }
     ];
 
-    // Offizielle Verbotszonen und NSG am Rhein (Rot markiert)
-    const restrictedZones = [
-      { name: "Lampertheimer Altrhein & Heegwasser (KM 437 - 443.2)", latlngs: [[49.6200, 8.4100], [49.6500, 8.4200], [49.6800, 8.4350]], desc: "Boots- und Uferangelverbot auf der linken Uferseite, Fretterloch Einschränkungen." },
-      { name: "Maulbeeraue / Nordheimer Altrhein (KM 443.2 - 448.6)", latlngs: [[49.6800, 8.4350], [49.7100, 8.4450], [49.7300, 8.4500]], desc: "Bootsangelverbot im Maulbeerauer Altrhein (Uferangeln gestattet)." },
-      { name: "Steiner Wald & Eich-Gimbsheimer Altrhein (KM 448.6 - 457.4)", latlngs: [[49.7300, 8.4500], [49.7700, 8.3900], [49.8000, 8.3700]], desc: "Regionale Betretungsverbote der Uferzonen im NSG Steiner Wald." },
-      { name: "Kühkopf-Knoblochsaue (KM 463.4 - 478.3)", latlngs: [[49.8300, 8.4000], [49.8800, 8.4800], [49.9300, 8.4200]], desc: "Strikte Uferbetretungs- und Angelverbote in Kernzonen des NSG Kühkopf." },
-      { name: "Großer Goldgrund (KM 478.3 - 490.3)", latlngs: [[49.9300, 8.4200], [49.9600, 8.3800], [49.9000, 8.3300]], desc: "Angel- und Betretungsverbot für sensible Flachwasser- und Auenbereiche." },
-      { name: "Ginsheimer Altrhein & Bleiaue (KM 490.0 - 498.4)", latlngs: [[49.9000, 8.3300], [49.9300, 8.3000], [49.9900, 8.2800]], desc: "Ufer- und Treibangelverbote in den Flachwasserzonen der Bleiaue." },
-      { name: "Petersaue & Rettbergsaue (KM 498.0 - 506.6)", latlngs: [[49.9900, 8.2800], [50.0100, 8.2500], [50.0400, 8.2300]], desc: "Ganzjähriges / zeitliches Ufer- und Bootsangelverbot, striktes Betreten verboten." },
-      { name: "NSG Mombacher Rheinufer (KM 505.4 - 506.0)", latlngs: [[50.0300, 8.2350], [50.0400, 8.2300]], desc: "Ganzjähriges vollständiges Ufer- und Bootsangelverbot." },
-      { name: "NSG Niederwallufer Bucht (KM 506.65 - 507.30)", latlngs: [[50.0450, 8.2250], [50.0500, 8.2200]], desc: "Ganzjähriges Angel-, Betretungs- und Befahrungsverbot." },
-      { name: "NSG Mariannenaue (KM 506.60 - 514.30)", latlngs: [[50.0500, 8.2200], [50.0800, 8.1100], [50.0200, 8.0500]], desc: "Strikte Angel- und Befahrungsverbote im Stillwasserbereich hinter der Mariannenaue." },
-      { name: "Winkler Aue & Elster Aue (KM 514.20 - 522.40)", latlngs: [[50.0200, 8.0500], [50.0100, 8.0100], [49.9800, 7.9500]], desc: "Betretungsverbote und zeitliche/räumliche Uferangelverbote." },
-      { name: "Rüdesheimer Aue / Ingelheimer Aue (KM 522.00 - 529.40)", latlngs: [[49.9800, 7.9500], [49.9700, 7.9000], [49.9600, 7.8500]], desc: "Ufer- und Bootsangelverbote in den Flachwasserzonen." },
-      { name: "NSG Lorcher Werth (KM 529.00 - 540.60)", latlngs: [[49.9600, 7.8500], [50.0000, 7.8000], [50.0400, 7.8100]], desc: "Schonbezirk mit Angelverbot im Inselinnenbereich und Uferbetretungsverbot." },
-      { name: "Wispermündung (KM 540.60 - 544.00)", latlngs: [[50.0400, 7.8100], [50.0600, 7.8200]], desc: "Betretungsverbote und örtliche Angelverbote im Mündungsbereich." }
+    const restrictedZonesPoints = [
+      { name: "Lampertheimer Altrhein & Heegwasser", start: { lat: 49.6200, lng: 8.4100, label: "Beginn: Rhein-km 437,0" }, end: { lat: 49.6800, lng: 8.4350, label: "Ende: Rhein-km 443,2" }, desc: "Bootsangelverbot und Uferangelverbot auf der linken Uferseite im Lampertheimer Altrhein inkl. Zu- und Ausfahrtsbereich. Uferangelverbot im Fretterloch (Bootsangeln ohne Motor bis zur Bojenkette erlaubt). Generelles Angelverbot von Brücke Altrhein-km 4,75 abwärts bis Mündung, ausgenommen Landseite." },
+      { name: "Maulbeeraue / Nordheimer Altrhein", start: { lat: 49.6800, lng: 8.4350, label: "Beginn: Rhein-km 443,2" }, end: { lat: 49.7300, lng: 8.4500, label: "Ende: Rhein-km 448,6" }, desc: "Bootsangelverbot im Maulbeerauer Altrhein (Uferangeln beidseitig gestattet)." },
+      { name: "Steiner Wald & Eich-Gimbsheimer Altrhein", start: { lat: 49.7300, lng: 8.4500, label: "Beginn: Rhein-km 448,6" }, end: { lat: 49.8000, lng: 8.3700, label: "Ende: Rhein-km 457,4" }, desc: "Regionale Betretungsverbote der Uferzonen im Bereich des NSG Steiner Wald sowie Restriktionen in Altrheinarmen." },
+      { name: "Kühkopf-Knoblochsaue & Stockstadt-Erfelder Altrhein", start: { lat: 49.8300, lng: 8.4000, label: "Beginn: Rhein-km 463,4" }, end: { lat: 49.9300, lng: 8.4200, label: "Ende: Rhein-km 478,3" }, desc: "Strikte Uferbetretungs- und Angelverbote in den ausgewiesenen Kernzonen des NSG Kühkopf. Bootstrennungs- und Fahrverbote für Nebenarme sowie Einschränkungen für das Uferangeln am Hauptstrom." },
+      { name: "Großer Goldgrund", start: { lat: 49.9300, lng: 8.4200, label: "Beginn: Rhein-km 478,3" }, end: { lat: 49.9000, lng: 8.3300, label: "Ende: Rhein-km 490,3" }, desc: "Angelverbote und Betretungsverbot für sensible Flachwasser- und Auenbereiche am Goldgrund." },
+      { name: "Ginsheimer Altrhein, Bleiaue & Mainmündung", start: { lat: 49.9000, lng: 8.3300, label: "Beginn: Rhein-km 490,0" }, end: { lat: 49.9900, lng: 8.2800, label: "Ende: Rhein-km 498,4" }, desc: "Ufer- und Treibangelverbote in den Flachwasserzonen der Bleiaue sowie Einschränkungen in den Nebenarmen." },
+      { name: "Petersaue & Rettbergsaue", start: { lat: 49.9900, lng: 8.2800, label: "Beginn: Rhein-km 498,0" }, end: { lat: 50.0400, lng: 8.2300, label: "Ende: Rhein-km 506,6" }, desc: "Ganzjähriges oder zeitlich eingeschränktes Ufer- und Bootsangelverbot in Stillwasser- und Schonbezirken. Strikte Betretungsverbote der Inselufer." },
+      { name: "NSG Mombacher Rheinufer", start: { lat: 50.0300, lng: 8.2350, label: "Beginn: Rhein-km 505,4" }, end: { lat: 50.0400, lng: 8.2300, label: "Ende: Rhein-km 506,0" }, desc: "Ganzjähriges vollständiges Ufer- und Bootsangelverbot." },
+      { name: "NSG Niederwallufer Bucht", start: { lat: 50.0450, lng: 8.2250, label: "Beginn: Rhein-km 506,65" }, end: { lat: 50.0500, lng: 8.2200, label: "Ende: Rhein-km 507,30" }, desc: "Ganzjähriges Angel- sowie Betretungs- und Befahrungsverbot der Ufer- und Flachwasserzonen." },
+      { name: "NSG Mariannenaue", start: { lat: 50.0500, lng: 8.2200, label: "Beginn: Rhein-km 506,60" }, end: { lat: 50.0200, lng: 8.0500, label: "Ende: Rhein-km 514,30" }, desc: "Strikte Angel- und Befahrungsverbote im Stillwasserbereich hinter der Mariannenaue sowie Betretungsverbote der Inselufer." },
+      { name: "Winkler Aue & Elster Aue", start: { lat: 50.0200, lng: 8.0500, label: "Beginn: Rhein-km 514,20" }, end: { lat: 49.9800, lng: 7.9500, label: "Ende: Rhein-km 522,40" }, desc: "Betretungsverbote und zeitliche/räumliche Uferangelverbote in den Schutzgebieten der Auen." },
+      { name: "Rüdesheimer Aue / Ingelheimer Aue", start: { lat: 49.9800, lng: 7.9500, label: "Beginn: Rhein-km 522,00" }, end: { lat: 49.9600, lng: 7.8500, label: "Ende: Rhein-km 529,40" }, desc: "Ufer- und Bootsangelverbote in den Flachwasserzonen rund um die Inselstrukturen." },
+      { name: "NSG Lorcher Werth", start: { lat: 49.9600, lng: 7.8500, label: "Beginn: Rhein-km 529,00" }, end: { lat: 50.0400, lng: 7.8100, label: "Ende: Rhein-km 540,60" }, desc: "Schonbezirk mit Angelverbot im Inselinnenbereich und Uferbetretungsverbot." },
+      { name: "Wispermündung", start: { lat: 50.0400, lng: 7.8100, label: "Beginn: Rhein-km 540,60" }, end: { lat: 50.0600, lng: 7.8200, label: "Ende: Rhein-km 544,00" }, desc: "Betretungsverbote und örtliche Angelverbote im Mündungsbereich der Wisper." }
     ];
 
     const $ = id => document.getElementById(id);
@@ -424,6 +427,18 @@
       return { km: Math.max(0, Math.min(1030, best.km ?? 0)) };
     }
 
+    function createZonePopup(zone, type) {
+      const point = type === 'start' ? zone.start : zone.end;
+      return `
+        <div style="font-family:sans-serif; max-width: 220px;">
+          <strong style="color:#b91c1c; font-size:0.9rem;">⛔ Angelverbot / NSG</strong><br>
+          <span style="font-weight:700; font-size:0.85rem;">${zone.name}</span><br>
+          <span style="color:#0284c7; font-size:0.78rem; font-weight:600;">${point.label}</span>
+          <p style="font-size:0.78rem; margin:6px 0 0 0; color:#333; line-height:1.3;">${zone.desc}</p>
+        </div>
+      `;
+    }
+
     function initMap() {
       if (!window.L) return;
       map = L.map('map').setView([49.95, 8.29], 11);
@@ -433,21 +448,14 @@
         attribution: '© Google Maps'
       }).addTo(map);
 
-      // Rote Verbotszonen in die Karte einzeichnen
-      restrictedZones.forEach(zone => {
-        const polyline = L.polyline(zone.latlngs, {
-          color: '#ef4444',
-          weight: 5,
-          opacity: 0.8
-        }).addTo(map);
+      restrictedZonesPoints.forEach(zone => {
+        L.circleMarker([zone.start.lat, zone.start.lng], {
+          radius: 7, color: '#ffffff', weight: 2, fillColor: '#ef4444', fillOpacity: 1
+        }).addTo(map).bindPopup(createZonePopup(zone, 'start'));
 
-        polyline.bindPopup(`
-          <div style="font-family:sans-serif;">
-            <strong style="color:#b91c1c;font-size:0.95rem;">⛔ Verbotszone / NSG</strong><br>
-            <span style="font-weight:700;font-size:0.85rem;">${zone.name}</span><br>
-            <p style="font-size:0.8rem;margin:5px 0 0 0;color:#333;">${zone.desc}</p>
-          </div>
-        `);
+        L.circleMarker([zone.end.lat, zone.end.lng], {
+          radius: 7, color: '#ffffff', weight: 2, fillColor: '#ef4444', fillOpacity: 1
+        }).addTo(map).bindPopup(createZonePopup(zone, 'end'));
       });
 
       map.on('click', e => setLocationAndOpenForm(e.latlng.lat, e.latlng.lng));
@@ -469,13 +477,7 @@
 
         if (!userLocationMarker) {
           userLocationMarker = L.circleMarker(location, {
-            radius: 10,
-            color: '#ffffff',
-            weight: 3,
-            fillColor: '#0284c7',
-            fillOpacity: 1,
-            pane: 'markerPane',
-            bubblingMouseEvents: false
+            radius: 10, color: '#ffffff', weight: 3, fillColor: '#0284c7', fillOpacity: 1, pane: 'markerPane', bubblingMouseEvents: false
           }).addTo(map).bindTooltip(tooltipText, { direction: 'top', offset: [0, -8], permanent: true, className: 'gps-km-tooltip' });
         } else {
           userLocationMarker.setLatLng(location);
@@ -487,12 +489,7 @@
           hasCenteredOnUserLocation = true;
         }
       }, error => {
-        console.warn('GPS-Fehler:', error);
-        if (error.code === 1) {
-          showStatus('Standortzugriff wurde blockiert. Bitte erlaube den Zugriff im Browser.', 'error');
-        } else {
-          showStatus('Standort konnte nicht ermittelt werden.', 'error');
-        }
+        if (error.code === 1) showStatus('Standortzugriff blockiert.', 'error');
       }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 3000 });
     }
 
@@ -508,17 +505,14 @@
             navigator.geolocation.getCurrentPosition(pos => {
               const loc = [pos.coords.latitude, pos.coords.longitude];
               map.setView(loc, 14);
-              const estimate = calculateRhineKm(pos.coords.latitude, pos.coords.longitude);
               if (!userLocationMarker) {
-                userLocationMarker = L.circleMarker(loc, {
-                  radius: 10, color: '#ffffff', weight: 3, fillColor: '#0284c7', fillOpacity: 1, pane: 'markerPane'
-                }).addTo(map).bindTooltip(`Rhein-KM ${estimate.km.toFixed(2)}`, { direction: 'top', offset: [0, -8], permanent: true, className: 'gps-km-tooltip' });
+                const estimate = calculateRhineKm(loc[0], loc[1]);
+                userLocationMarker = L.circleMarker(loc, { radius: 10, color: '#ffffff', weight: 3, fillColor: '#0284c7', fillOpacity: 1, pane: 'markerPane' })
+                  .addTo(map).bindTooltip(`Rhein-KM ${estimate.km.toFixed(2)}`, { direction: 'top', offset: [0, -8], permanent: true, className: 'gps-km-tooltip' });
               } else {
                 userLocationMarker.setLatLng(loc);
               }
-            }, err => {
-              showStatus('Standort konnte nicht abgerufen werden.', 'error');
-            }, { timeout: 8000, enableHighAccuracy: true });
+            }, () => {}, { timeout: 8000, enableHighAccuracy: true });
           }
         }, 150);
       }
@@ -534,7 +528,7 @@
         const { latitude, longitude } = position.coords;
         map?.setView([latitude, longitude], 15);
         setLocationAndOpenForm(latitude, longitude);
-      }, error => showStatus('Standort konnte nicht ermittelt werden.', 'error'),
+      }, () => showStatus('Standort konnte nicht ermittelt werden.', 'error'),
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
     }
 
@@ -587,9 +581,7 @@
       document.querySelectorAll('.view-page').forEach(el => el.classList.toggle('active', el.id === `page-${pageId}`));
       document.querySelectorAll('.nav-btn').forEach(el => el.classList.toggle('active', el.dataset.page === pageId));
       if (pageId === 'map' && map) {
-        setTimeout(() => {
-          map.invalidateSize();
-        }, 100);
+        setTimeout(() => map.invalidateSize(), 150);
         startLocationTracking();
       }
     }
@@ -764,7 +756,10 @@
         info.appendChild(species);
         info.appendChild(makeText('div', 'details', `Köder: ${c.bait}`));
         info.appendChild(makeText('div', 'details', new Date(c.datetime).toLocaleString('de-DE')));
-        info.addEventListener('click', () => focusCatch(c.lat, c.lng));
+        info.addEventListener('click', () => {
+          showPage('map');
+          if (map) setTimeout(() => map.setView([c.lat, c.lng], 15), 150);
+        });
         card.appendChild(info);
 
         const actions = document.createElement('div');
@@ -798,16 +793,6 @@
         if (count > maxCount) { maxCount = count; topBait = bait; }
       }
       $('stat-top-bait').textContent = topBait;
-    }
-
-    function focusCatch(lat, lng) {
-      showPage('map');
-      if (map && Number.isFinite(lat) && Number.isFinite(lng)) {
-        setTimeout(() => {
-          map.invalidateSize();
-          map.setView([lat, lng], 15);
-        }, 120);
-      }
     }
 
     async function exportCatches() {
