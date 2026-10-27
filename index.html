@@ -86,6 +86,24 @@
     .status-message.success { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
     
     .gps-km-tooltip { background: #1b365d; color: #ffffff; border: 1px solid #38bdf8; font-weight: 700; padding: 2px 6px; border-radius: 4px; font-size: .75rem; box-shadow: 0 2px 6px #0004; }
+
+    /* Quadratische Badge-Marker für Verbotszonen */
+    .zone-badge-icon {
+      background: #ef4444;
+      color: #ffffff;
+      border: 2px solid #ffffff;
+      border-radius: 4px;
+      font-size: 9px;
+      font-weight: 800;
+      text-align: center;
+      line-height: 1.1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2px;
+      box-shadow: 0 3px 8px rgba(0,0,0,0.4);
+      white-space: normal;
+    }
   </style>
 </head>
 <body>
@@ -449,13 +467,29 @@
       }).addTo(map);
 
       restrictedZonesPoints.forEach(zone => {
-        L.circleMarker([zone.start.lat, zone.start.lng], {
-          radius: 7, color: '#ffffff', weight: 2, fillColor: '#ef4444', fillOpacity: 1
-        }).addTo(map).bindPopup(createZonePopup(zone, 'start'));
+        // Größeres quadratisches Icon für den Startpunkt
+        const startIcon = L.divIcon({
+          className: 'zone-badge-icon',
+          html: 'Beginn Angelverbot',
+          iconSize: [64, 42],
+          iconAnchor: [32, 21]
+        });
 
-        L.circleMarker([zone.end.lat, zone.end.lng], {
-          radius: 7, color: '#ffffff', weight: 2, fillColor: '#ef4444', fillOpacity: 1
-        }).addTo(map).bindPopup(createZonePopup(zone, 'end'));
+        L.marker([zone.start.lat, zone.start.lng], { icon: startIcon })
+          .addTo(map)
+          .bindPopup(createZonePopup(zone, 'start'));
+
+        // Größeres quadratisches Icon für den Endpunkt
+        const endIcon = L.divIcon({
+          className: 'zone-badge-icon',
+          html: 'Ende Angelverbot',
+          iconSize: [64, 42],
+          iconAnchor: [32, 21]
+        });
+
+        L.marker([zone.end.lat, zone.end.lng], { icon: endIcon })
+          .addTo(map)
+          .bindPopup(createZonePopup(zone, 'end'));
       });
 
       map.on('click', e => setLocationAndOpenForm(e.latlng.lat, e.latlng.lng));
