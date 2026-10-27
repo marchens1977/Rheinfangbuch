@@ -249,6 +249,24 @@
       { km: 1030, lat: 51.9500, lng: 4.1200 }
     ];
 
+    // Offizielle Verbotszonen und NSG am Rhein (Rot markiert)
+    const restrictedZones = [
+      { name: "Lampertheimer Altrhein & Heegwasser (KM 437 - 443.2)", latlngs: [[49.6200, 8.4100], [49.6500, 8.4200], [49.6800, 8.4350]], desc: "Boots- und Uferangelverbot auf der linken Uferseite, Fretterloch Einschränkungen." },
+      { name: "Maulbeeraue / Nordheimer Altrhein (KM 443.2 - 448.6)", latlngs: [[49.6800, 8.4350], [49.7100, 8.4450], [49.7300, 8.4500]], desc: "Bootsangelverbot im Maulbeerauer Altrhein (Uferangeln gestattet)." },
+      { name: "Steiner Wald & Eich-Gimbsheimer Altrhein (KM 448.6 - 457.4)", latlngs: [[49.7300, 8.4500], [49.7700, 8.3900], [49.8000, 8.3700]], desc: "Regionale Betretungsverbote der Uferzonen im NSG Steiner Wald." },
+      { name: "Kühkopf-Knoblochsaue (KM 463.4 - 478.3)", latlngs: [[49.8300, 8.4000], [49.8800, 8.4800], [49.9300, 8.4200]], desc: "Strikte Uferbetretungs- und Angelverbote in Kernzonen des NSG Kühkopf." },
+      { name: "Großer Goldgrund (KM 478.3 - 490.3)", latlngs: [[49.9300, 8.4200], [49.9600, 8.3800], [49.9000, 8.3300]], desc: "Angel- und Betretungsverbot für sensible Flachwasser- und Auenbereiche." },
+      { name: "Ginsheimer Altrhein & Bleiaue (KM 490.0 - 498.4)", latlngs: [[49.9000, 8.3300], [49.9300, 8.3000], [49.9900, 8.2800]], desc: "Ufer- und Treibangelverbote in den Flachwasserzonen der Bleiaue." },
+      { name: "Petersaue & Rettbergsaue (KM 498.0 - 506.6)", latlngs: [[49.9900, 8.2800], [50.0100, 8.2500], [50.0400, 8.2300]], desc: "Ganzjähriges / zeitliches Ufer- und Bootsangelverbot, striktes Betreten verboten." },
+      { name: "NSG Mombacher Rheinufer (KM 505.4 - 506.0)", latlngs: [[50.0300, 8.2350], [50.0400, 8.2300]], desc: "Ganzjähriges vollständiges Ufer- und Bootsangelverbot." },
+      { name: "NSG Niederwallufer Bucht (KM 506.65 - 507.30)", latlngs: [[50.0450, 8.2250], [50.0500, 8.2200]], desc: "Ganzjähriges Angel-, Betretungs- und Befahrungsverbot." },
+      { name: "NSG Mariannenaue (KM 506.60 - 514.30)", latlngs: [[50.0500, 8.2200], [50.0800, 8.1100], [50.0200, 8.0500]], desc: "Strikte Angel- und Befahrungsverbote im Stillwasserbereich hinter der Mariannenaue." },
+      { name: "Winkler Aue & Elster Aue (KM 514.20 - 522.40)", latlngs: [[50.0200, 8.0500], [50.0100, 8.0100], [49.9800, 7.9500]], desc: "Betretungsverbote und zeitliche/räumliche Uferangelverbote." },
+      { name: "Rüdesheimer Aue / Ingelheimer Aue (KM 522.00 - 529.40)", latlngs: [[49.9800, 7.9500], [49.9700, 7.9000], [49.9600, 7.8500]], desc: "Ufer- und Bootsangelverbote in den Flachwasserzonen." },
+      { name: "NSG Lorcher Werth (KM 529.00 - 540.60)", latlngs: [[49.9600, 7.8500], [50.0000, 7.8000], [50.0400, 7.8100]], desc: "Schonbezirk mit Angelverbot im Inselinnenbereich und Uferbetretungsverbot." },
+      { name: "Wispermündung (KM 540.60 - 544.00)", latlngs: [[50.0400, 7.8100], [50.0600, 7.8200]], desc: "Betretungsverbote und örtliche Angelverbote im Mündungsbereich." }
+    ];
+
     const $ = id => document.getElementById(id);
 
     function showStatus(message, type = 'success') {
@@ -414,6 +432,23 @@
         maxZoom: 20,
         attribution: '© Google Maps'
       }).addTo(map);
+
+      // Rote Verbotszonen in die Karte einzeichnen
+      restrictedZones.forEach(zone => {
+        const polyline = L.polyline(zone.latlngs, {
+          color: '#ef4444',
+          weight: 5,
+          opacity: 0.8
+        }).addTo(map);
+
+        polyline.bindPopup(`
+          <div style="font-family:sans-serif;">
+            <strong style="color:#b91c1c;font-size:0.95rem;">⛔ Verbotszone / NSG</strong><br>
+            <span style="font-weight:700;font-size:0.85rem;">${zone.name}</span><br>
+            <p style="font-size:0.8rem;margin:5px 0 0 0;color:#333;">${zone.desc}</p>
+          </div>
+        `);
+      });
 
       map.on('click', e => setLocationAndOpenForm(e.latlng.lat, e.latlng.lng));
       renderCatches();
