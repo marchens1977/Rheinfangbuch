@@ -10,7 +10,7 @@
   <style>
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #090d16; color: #333; height: 100dvh; display: flex; flex-direction: column; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #090d16; color: #333; height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
     button, input, select, textarea { font: inherit; }
     button { cursor: pointer; }
     button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid #38bdf8; outline-offset: 2px; }
@@ -87,7 +87,6 @@
     
     .gps-km-tooltip { background: #1b365d; color: #ffffff; border: 1px solid #38bdf8; font-weight: 700; padding: 2px 6px; border-radius: 4px; font-size: .75rem; box-shadow: 0 2px 6px #0004; }
 
-    /* Quadratische Kachel für Angelverbotszonen direkt auf dem Rhein */
     .zone-badge-icon {
       background: #ef4444;
       color: #ffffff;
@@ -271,7 +270,6 @@
       { km: 1030, lat: 51.9500, lng: 4.1200 }
     ];
 
-    // Zentrierte Kacheln für die Angelverbotszonen direkt auf dem Rhein
     const restrictedZonesCenter = [
       { name: "Lampertheimer Altrhein & Heegwasser", lat: 49.6500, lng: 8.4200, label: "Rhein-km 437,0 – 443,2", desc: "Bootsangelverbot und Uferangelverbot auf der linken Uferseite im Lampertheimer Altrhein inkl. Zu- und Ausfahrtsbereich. Uferangelverbot im Fretterloch (Bootsangeln ohne Motor bis zur Bojenkette erlaubt). Generelles Angelverbot von Brücke Altrhein-km 4,75 abwärts bis Mündung, ausgenommen Landseite." },
       { name: "Maulbeeraue / Nordheimer Altrhein", lat: 49.7050, lng: 8.4420, label: "Rhein-km 443,2 – 448,6", desc: "Bootsangelverbot im Maulbeerauer Altrhein (Uferangeln beidseitig gestattet)." },
@@ -455,7 +453,6 @@
         attribution: '© Google Maps'
       }).addTo(map);
 
-      // Zentrierte Kacheln für die Verbotszonen auf der Karte platzieren
       restrictedZonesCenter.forEach(zone => {
         const zoneIcon = L.divIcon({
           className: 'zone-badge-icon',
