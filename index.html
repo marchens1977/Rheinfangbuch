@@ -610,7 +610,12 @@
       const b = makeText('button', 'btn', 'Hier Fang eintragen');
       b.type = 'button';
       b.addEventListener('click', () => { map.closePopup(); setLocationAndOpenForm(e.latlng.lat, e.latlng.lng); });
-      L.popup().setLatLng(e.latlng).setContent(b).openOn(map);
+      const km = kmOf(e.latlng.lat, e.latlng.lng);
+      const info = makeText('div', '', km ? `📍 Rhein-km ca. ${km}` : '📍 Weit vom Rhein entfernt – kein Rhein-km');
+      info.style.cssText = 'font-weight:700;color:#1b365d;margin-bottom:8px;text-align:center';
+      const box = document.createElement('div');
+      box.append(info, b);
+      L.popup().setLatLng(e.latlng).setContent(box).openOn(map);
     });
     renderAll();
     placeZoneMarkers();
