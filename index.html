@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+!DOCTYPE html>
 <html lang="de">
 <head>
   <meta charset="UTF-8">
@@ -42,7 +42,7 @@
     .map-overlay-btn { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 500; background: #1b365d; color: white; border: none; padding: 12px 17px; border-radius: 30px; font-weight: 700; font-size: .92rem; box-shadow: 0 4px 12px #0005; white-space: nowrap; max-width: calc(100% - 24px); }
     
     .stats-bar { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 12px; background: #edf2f7; border-bottom: 1px solid #cbd5e0; }
-    .stat-card { background: white; padding: 9px 5px; border-radius: 6px; text-align: center; box-shadow: 0 1px 3px #0000; min-width: 0; }
+    .stat-card { background: white; padding: 9px 5px; border-radius: 6px; text-align: center; box-shadow: 0 1px 3px #0001; min-width: 0; }
     .stat-card .num { font-size: 1.05rem; font-weight: 750; color: #1b365d; overflow-wrap: anywhere; }
     .stat-card .label { font-size: .65rem; color: #718096; text-transform: uppercase; margin-top: 3px; }
     
@@ -87,6 +87,7 @@
     
     .gps-km-tooltip { background: #1b365d; color: #ffffff; border: 1px solid #38bdf8; font-weight: 700; padding: 2px 6px; border-radius: 4px; font-size: .75rem; box-shadow: 0 2px 6px #0004; }
 
+    /* Quadratische Kachel für Angelverbotszonen direkt auf dem Rhein */
     .zone-badge-icon {
       background: #ef4444;
       color: #ffffff;
@@ -103,6 +104,8 @@
       box-shadow: 0 4px 10px rgba(0,0,0,0.4);
       white-space: nowrap;
     }
+    .map-tool-btn { position: absolute; top: 12px; right: 12px; z-index: 500; background: #1b365d; color: #fff; border: 1px solid #38bdf8; border-radius: 20px; padding: 8px 12px; font-size: .8rem; font-weight: 700; box-shadow: 0 2px 8px #0005; }
+    .km-label { background: #fff; color: #1b365d; border: 1px solid #1b365d; font-weight: 700; padding: 1px 4px; border-radius: 4px; font-size: .7rem; box-shadow: none; }
   </style>
 </head>
 <body>
@@ -125,6 +128,7 @@
 
     <section id="page-map" class="view-page" aria-label="Karte">
       <div id="map"></div>
+      <button class="map-tool-btn" id="km-toggle-btn" type="button" aria-pressed="true">Rhein-km: an</button>
       <button class="map-overlay-btn" id="capture-gps-btn" type="button">📍 Fang an meinem Standort erfassen</button>
     </section>
 
@@ -178,7 +182,7 @@
           </div>
           <div class="form-group">
             <label for="photo-input">Foto hinzufügen (Kamera / Galerie)</label>
-            <input type="file" id="photo-input" accept="image/*" capture="environment">
+            <input type="file" id="photo-input" accept="image/*">
             <img id="photo-preview" class="photo-preview" alt="Vorschau des Fangfotos">
             <button type="button" id="remove-photo-btn" class="btn btn-secondary" style="display:none">Foto entfernen</button>
             <span class="hint">Fotos werden auf maximal 1200 Pixel verkleinert, um Speicherplatz zu sparen.</span>
@@ -224,6 +228,11 @@
           <input type="file" id="import-file" accept=".json,application/json" hidden>
           <button class="btn btn-secondary" id="import-btn" type="button" style="margin-top: 6px;">Backup auswählen & importieren</button>
         </div>
+        <div class="backup-card">
+          <h3>Rhein-km neu berechnen</h3>
+          <p class="hint" style="margin:0;">Berechnet den Rhein-km aller gespeicherten Fänge mit den genaueren Kilometermarken neu. Vorher bitte ein Backup erstellen.</p>
+          <button class="btn btn-secondary" id="recalc-km-btn" type="button" style="margin-top: 6px;">Rhein-km aller Fänge aktualisieren</button>
+        </div>
       </div>
     </section>
   </main>
@@ -236,27 +245,24 @@
   </nav>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script>
-  (() => {
-    'use strict';
+<script>
+(() => {
+  'use strict';
 
-    const DB_NAME = 'rheinfishing_db';
-    const DB_VERSION = 1;
-    const STORE_NAME = 'catches';
+  const DB_NAME = 'rheinfishing_db', DB_VERSION = 1, STORE = 'catches';
+  const FAR_M = 10000; // weiter als 10 km vom Rhein: kein Rhein-km
+  const ZONE_HINT = 'Angaben ohne Gewähr. Maßgeblich sind die aktuelle Gewässerordnung und die zuständige Fischereibehörde.';
+  const $ = id => document.getElementById(id);
 
-    let db = null;
-    let map = null;
-    let userLocationMarker = null;
-    let locationWatchId = null;
-    let hasCenteredOnUserLocation = false;
-    let catches = [];
-    let currentTempMarker = null;
-    let catchMarkers = [];
-    let editingId = null;
-    let pendingPhoto = null;
-    let statusTimer = null;
+  let db, map, markerLayer, userMarker, tempMarker = null;
+  let watchId = null, centered = false, currentPage = 'home';
+  let catches = [], editingId = null, photoData = null;
+  let statusTimer = null, lastPopupClose = 0;
+  let kmLine = null, kmLayer = null, kmVisible = true;
+  const KM_CACHE_KEY = 'rheinfangbuch_km_v1', KM_TTL = 60 * 24 * 3600 * 1000;
+  const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
 
-    const refPoints = [
+      const refPoints = [
       { km: 0, lat: 47.6627, lng: 9.1758 },
       { km: 170, lat: 47.5584, lng: 7.5886 },
       { km: 360, lat: 49.0110, lng: 8.3582 },
@@ -270,6 +276,7 @@
       { km: 1030, lat: 51.9500, lng: 4.1200 }
     ];
 
+    // Zentrierte Kacheln für die Angelverbotszonen direkt auf dem Rhein
     const restrictedZonesCenter = [
       { name: "Lampertheimer Altrhein & Heegwasser", lat: 49.6500, lng: 8.4200, label: "Rhein-km 437,0 – 443,2", desc: "Bootsangelverbot und Uferangelverbot auf der linken Uferseite im Lampertheimer Altrhein inkl. Zu- und Ausfahrtsbereich. Uferangelverbot im Fretterloch (Bootsangeln ohne Motor bis zur Bojenkette erlaubt). Generelles Angelverbot von Brücke Altrhein-km 4,75 abwärts bis Mündung, ausgenommen Landseite." },
       { name: "Maulbeeraue / Nordheimer Altrhein", lat: 49.7050, lng: 8.4420, label: "Rhein-km 443,2 – 448,6", desc: "Bootsangelverbot im Maulbeerauer Altrhein (Uferangeln beidseitig gestattet)." },
@@ -287,597 +294,648 @@
       { name: "Wispermündung", lat: 50.0500, lng: 7.8150, label: "Rhein-km 540,60 – 544,00", desc: "Betretungsverbote und örtliche Angelverbote im Mündungsbereich der Wisper." }
     ];
 
-    const $ = id => document.getElementById(id);
+  // ---------- Hilfsfunktionen ----------
+  const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
 
-    function showStatus(message, type = 'success') {
-      const box = $('status-message');
-      box.textContent = message;
-      box.className = `status-message show ${type}`;
-      if (statusTimer) clearTimeout(statusTimer);
-      statusTimer = setTimeout(() => box.classList.remove('show'), 6000);
-    }
+  function makeText(tag, className, text) {
+    const el = document.createElement(tag);
+    if (className) el.className = className;
+    el.textContent = text;
+    return el;
+  }
 
-    function openDatabase() {
-      return new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB_NAME, DB_VERSION);
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => resolve(request.result);
-        request.onupgradeneeded = event => {
-          const database = event.target.result;
-          if (!database.objectStoreNames.contains(STORE_NAME)) {
-            database.createObjectStore(STORE_NAME, { keyPath: 'id' });
-          }
-        };
-      });
-    }
+  function showStatus(message, type = 'success') {
+    const box = $('status-message');
+    box.textContent = message;
+    box.className = `status-message show ${type}`;
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => box.classList.remove('show'), 6000);
+  }
 
-    async function initDB() {
-      try {
-        db = await openDatabase();
-        catches = await dbLoadCatches();
-        populateYearFilter();
-        renderCatches();
-      } catch (err) {
-        console.error('IndexedDB init error:', err);
-        showStatus('Datenbank konnte nicht geladen werden.', 'error');
-      }
-    }
+  function toLocalInput(v) {
+    let d = new Date(v || Date.now());
+    if (isNaN(d)) d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0, 16);
+  }
 
-    function dbLoadCatches() {
-      return new Promise((resolve, reject) => {
-        const transaction = db.transaction(STORE_NAME, 'readonly');
-        const store = transaction.objectStore(STORE_NAME);
-        const request = store.getAll();
-        request.onsuccess = () => {
-          const raw = request.result || [];
-          const normalized = raw.filter(validateCatch).map(normalizeCatch);
-          resolve(normalized);
-        };
-        request.onerror = () => reject(request.error);
-      });
-    }
+  function setSelect(id, value) {
+    const el = $(id);
+    value = String(value ?? '');
+    if (value && ![...el.options].some(o => o.value === value)) el.add(new Option(value, value));
+    el.value = value;
+  }
 
-    function dbSaveCatch(catchObj) {
-      return new Promise((resolve, reject) => {
-        const transaction = db.transaction(STORE_NAME, 'readwrite');
-        const store = transaction.objectStore(STORE_NAME);
-        const request = store.put(catchObj);
-        request.onsuccess = () => resolve(true);
-        request.onerror = () => reject(request.error);
-      });
-    }
+  function splitBait(s) {
+    const m = String(s).match(/^(.*?)\s*\((\d+g)\)\s*$/);
+    return m ? { type: m[1], weight: m[2] } : { type: String(s), weight: '' };
+  }
 
-    function dbDeleteCatch(id) {
-      return new Promise((resolve, reject) => {
-        const transaction = db.transaction(STORE_NAME, 'readwrite');
-        const store = transaction.objectStore(STORE_NAME);
-        const request = store.delete(id);
-        request.onsuccess = () => resolve(true);
-        request.onerror = () => reject(request.error);
-      });
-    }
-
-    function dbClearAndImport(newCatches) {
-      return new Promise((resolve, reject) => {
-        const transaction = db.transaction(STORE_NAME, 'readwrite');
-        const store = transaction.objectStore(STORE_NAME);
-        store.clear();
-        newCatches.forEach(c => store.put(c));
-        transaction.oncomplete = () => resolve(true);
-        transaction.onerror = () => reject(transaction.error);
-      });
-    }
-
-    function populateDropdowns() {
-      const length = $('length');
-      for (let i = 1; i <= 150; i++) length.add(new Option(`${i} cm`, String(i)));
-      const weight = $('bait-weight');
-      for (let i = 1; i <= 60; i++) weight.add(new Option(`${i} g`, `${i}g`));
-      const depth = $('depth');
-      for (let d = 0.5; d <= 15; d += 0.5) {
-        const value = d.toFixed(1);
-        depth.add(new Option(`${value} m`, value));
-      }
-    }
-
-    function populateYearFilter() {
-      const yearSelect = $('filter-year');
-      const currentVal = yearSelect.value;
-      const years = new Set();
-      catches.forEach(c => {
-        if (c.datetime) {
-          const y = c.datetime.slice(0, 4);
-          if (y) years.add(y);
-        }
-      });
-      const sortedYears = Array.from(years).sort().reverse();
-      while (yearSelect.options.length > 1) {
-        yearSelect.remove(1);
-      }
-      sortedYears.forEach(y => {
-        yearSelect.add(new Option(y, y));
-      });
-      yearSelect.value = currentVal;
-    }
-
-    function validateCatch(c) {
-      if (!c || typeof c !== 'object') return false;
-      const lat = Number(c.lat), lng = Number(c.lng), length = Number(c.length);
-      return Number.isFinite(lat) && Number.isFinite(lng) && Number.isFinite(length);
-    }
-
-    function normalizeCatch(c) {
-      return {
-        id: c.id || `${Date.now()}`,
-        species: String(c.species || 'Andere'),
-        length: Number(c.length),
-        depth: c.depth ? Number(c.depth) : null,
-        bait: String(c.bait || 'Unbekannt'),
-        datetime: c.datetime || new Date().toISOString(),
-        notes: String(c.notes || ''),
-        km: String(c.km || ''),
-        photo: c.photo || null,
-        lat: Number(c.lat),
-        lng: Number(c.lng)
+  // ---------- Datenbank ----------
+  function openDatabase() {
+    return new Promise((res, rej) => {
+      const r = indexedDB.open(DB_NAME, DB_VERSION);
+      r.onerror = () => rej(r.error);
+      r.onsuccess = () => res(r.result);
+      r.onupgradeneeded = () => {
+        if (!r.result.objectStoreNames.contains(STORE)) r.result.createObjectStore(STORE, { keyPath: 'id' });
       };
+    });
+  }
+  function dbTx(mode, fn) {
+    return new Promise((res, rej) => {
+      const t = db.transaction(STORE, mode);
+      const r = fn(t.objectStore(STORE));
+      t.oncomplete = () => res(r ? r.result : undefined);
+      t.onerror = t.onabort = () => rej(t.error);
+    });
+  }
+  const dbLoad = async () => ((await dbTx('readonly', s => s.getAll())) || []).filter(validateCatch).map(normalizeCatch);
+  const dbSave = c => dbTx('readwrite', s => s.put(c));
+  const dbDelete = id => dbTx('readwrite', s => s.delete(id));
+  const dbImport = list => dbTx('readwrite', s => { list.forEach(c => s.put(c)); });
+
+  async function initDB() {
+    try {
+      db = await openDatabase();
+      catches = await dbLoad();
+      if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+    } catch (err) {
+      console.error('IndexedDB init error:', err);
+      showStatus('Datenbank konnte nicht geladen werden.', 'error');
     }
+  }
 
-    function calculateRhineKm(lat, lng) {
-      const meanLat = lat * Math.PI / 180;
-      const toXY = p => ({
-        x: (p.lng - lng) * 111320 * Math.cos(meanLat),
-        y: (p.lat - lat) * 110540
-      });
-      let best = { distance: Infinity, km: null };
-      for (let i = 0; i < refPoints.length - 1; i++) {
-        const a = refPoints[i], b = refPoints[i + 1];
-        const A = toXY(a), B = toXY(b);
-        const dx = B.x - A.x, dy = B.y - A.y;
-        const denom = dx * dx + dy * dy;
-        const t = denom === 0 ? 0 : Math.max(0, Math.min(1, -(A.x * dx + A.y * dy) / denom));
-        const px = A.x + t * dx, py = A.y + t * dy;
-        const distance = Math.hypot(px, py);
-        if (distance < best.distance) {
-          best = { distance, km: a.km + t * (b.km - a.km) };
-        }
-      }
-      return { km: Math.max(0, Math.min(1030, best.km ?? 0)) };
+  // ---------- Daten ----------
+  function validateCatch(c) {
+    if (!c || typeof c !== 'object') return false;
+    return ['lat', 'lng', 'length'].every(k => c[k] !== null && c[k] !== '' && Number.isFinite(Number(c[k])));
+  }
+
+  function normalizeCatch(c) {
+    const d = Number(c.depth);
+    return {
+      id: c.id ? String(c.id) : uid(),
+      species: String(c.species || 'Andere'),
+      length: Number(c.length),
+      depth: c.depth != null && c.depth !== '' && Number.isFinite(d) ? d : null,
+      bait: String(c.bait || 'Unbekannt'),
+      datetime: toLocalInput(c.datetime),
+      notes: String(c.notes || ''),
+      km: String(c.km || ''),
+      photo: c.photo || null,
+      lat: Number(c.lat),
+      lng: Number(c.lng)
+    };
+  }
+
+  // Projiziert einen Punkt auf eine km-Linie und liefert km + Abstand in Metern
+  function projectKm(line, lat, lng) {
+    const cx = 111320 * Math.cos(lat * Math.PI / 180);
+    const toXY = p => ({ x: (p.lng - lng) * cx, y: (p.lat - lat) * 110540 });
+    let best = { distance: Infinity, km: 0 };
+    let A = toXY(line[0]);
+    for (let i = 0; i < line.length - 1; i++) {
+      const a = line[i], B = toXY(line[i + 1]);
+      const dx = B.x - A.x, dy = B.y - A.y, denom = dx * dx + dy * dy;
+      const t = denom === 0 ? 0 : Math.max(0, Math.min(1, -(A.x * dx + A.y * dy) / denom));
+      const distance = Math.hypot(A.x + t * dx, A.y + t * dy);
+      if (distance < best.distance) best = { distance, km: a.km + t * (line[i + 1].km - a.km) };
+      A = B;
     }
+    return best;
+  }
 
-    function initMap() {
-      if (!window.L) return;
-      map = L.map('map').setView([49.95, 8.29], 11);
-      
-      L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
-        maxZoom: 20,
-        attribution: '© Google Maps'
-      }).addTo(map);
+  function calculateRhineKm(lat, lng) {
+    const precise = !!kmLine;
+    const r = projectKm(precise ? kmLine : refPoints, lat, lng);
+    return { km: Math.max(0, Math.min(1030, r.km)), distance: r.distance, precise };
+  }
 
-      restrictedZonesCenter.forEach(zone => {
-        const zoneIcon = L.divIcon({
-          className: 'zone-badge-icon',
-          html: '🚫 Angelverbot',
-          iconSize: [85, 32],
-          iconAnchor: [42, 16]
-        });
+  const kmOf = (lat, lng) => {
+    const e = calculateRhineKm(lat, lng);
+    if (e.precise && e.distance <= 5000) return e.km.toFixed(1);
+    const c = projectKm(refPoints, lat, lng); // Rückfall: grobe Schätzung (z. B. außerhalb der Marken-Abdeckung)
+    return c.distance <= FAR_M ? Math.max(0, Math.min(1030, c.km)).toFixed(0) : '';
+  };
 
-        const popupContent = `
-          <div style="font-family:sans-serif; max-width: 220px;">
-            <strong style="color:#b91c1c; font-size:0.9rem;">⛔ Angelverbot / NSG</strong><br>
-            <span style="font-weight:700; font-size:0.85rem;">${zone.name}</span><br>
-            <span style="color:#0284c7; font-size:0.78rem; font-weight:600;">${zone.label}</span>
-            <p style="font-size:0.78rem; margin:6px 0 0 0; color:#333; line-height:1.3;">${zone.desc}</p>
-          </div>
-        `;
+  // ---------- Rhein-km aus OpenStreetMap-Marken ----------
+  function buildKmLine(elements) {
+    const groups = new Map();
+    elements.forEach(n => {
+      const t = n.tags || {};
+      const d = parseFloat(String(t.distance ?? t['river:waterway_distance'] ?? '').replace(',', '.'));
+      if (!Number.isFinite(d) || d <= 0 || d > 1100 || !Number.isFinite(n.lat) || !Number.isFinite(n.lon)) return;
+      const rough = projectKm(refPoints, n.lat, n.lon);
+      // Marken anderer Flüsse (Main, Neckar, Mosel …) haben unpassende km-Werte und fallen hier heraus
+      if (Math.abs(rough.km - d) > 25 || rough.distance > 25000) return;
+      const key = Math.round(d * 10);
+      const g = groups.get(key) || { d: 0, lat: 0, lng: 0, n: 0 };
+      g.d += d; g.lat += n.lat; g.lng += n.lon; g.n++;
+      groups.set(key, g);
+    });
+    // linkes und rechtes Ufer gleicher km werden gemittelt (liegt dann ungefähr in der Flussmitte)
+    let pts = [...groups.values()]
+      .map(g => ({ km: +(g.d / g.n).toFixed(2), lat: +(g.lat / g.n).toFixed(5), lng: +(g.lng / g.n).toFixed(5) }))
+      .sort((x, y) => x.km - y.km);
+    const dist = (p, q) => Math.hypot((p.lat - q.lat) * 110540, (p.lng - q.lng) * 111320 * Math.cos(p.lat * Math.PI / 180));
+    const src = pts;
+    pts = src.filter((p, i) => {
+      if (i === 0 || i === src.length - 1) return true;
+      const a = src[i - 1], b = src[i + 1];
+      const e1 = (p.km - a.km) * 2000 + 2000, e2 = (b.km - p.km) * 2000 + 2000;
+      return !(dist(a, p) > e1 && dist(p, b) > e2); // Ausreißer entfernen
+    });
+    return pts;
+  }
 
-        L.marker([zone.lat, zone.lng], { icon: zoneIcon })
-          .addTo(map)
-          .bindPopup(popupContent);
-      });
-
-      map.on('click', e => setLocationAndOpenForm(e.latlng.lat, e.latlng.lng));
-      renderCatches();
-    }
-
-    function startLocationTracking() {
-      if (!navigator.geolocation) {
-        showStatus('GPS wird von diesem Browser nicht unterstützt.', 'error');
-        return;
-      }
-      if (locationWatchId !== null) return;
-
-      locationWatchId = navigator.geolocation.watchPosition(position => {
-        const { latitude, longitude } = position.coords;
-        const location = [latitude, longitude];
-        const estimate = calculateRhineKm(latitude, longitude);
-        const tooltipText = `Rhein-KM ${estimate.km.toFixed(2)}`;
-
-        if (!userLocationMarker) {
-          userLocationMarker = L.circleMarker(location, {
-            radius: 10, color: '#ffffff', weight: 3, fillColor: '#0284c7', fillOpacity: 1, pane: 'markerPane', bubblingMouseEvents: false
-          }).addTo(map).bindTooltip(tooltipText, { direction: 'top', offset: [0, -8], permanent: true, className: 'gps-km-tooltip' });
-        } else {
-          userLocationMarker.setLatLng(location);
-          userLocationMarker.setTooltipContent(tooltipText);
-        }
-
-        if (!hasCenteredOnUserLocation && map) {
-          map.setView(location, 14);
-          hasCenteredOnUserLocation = true;
-        }
-      }, error => {
-        if (error.code === 1) showStatus('Standortzugriff blockiert.', 'error');
-      }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 3000 });
-    }
-
-    function openMapWithGPS() {
-      showPage('map');
-      startLocationTracking();
-      if (map) {
-        setTimeout(() => {
-          map.invalidateSize();
-          if (userLocationMarker) {
-            map.setView(userLocationMarker.getLatLng(), 14);
-          } else if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(pos => {
-              const loc = [pos.coords.latitude, pos.coords.longitude];
-              map.setView(loc, 14);
-              if (!userLocationMarker) {
-                const estimate = calculateRhineKm(loc[0], loc[1]);
-                userLocationMarker = L.circleMarker(loc, { radius: 10, color: '#ffffff', weight: 3, fillColor: '#0284c7', fillOpacity: 1, pane: 'markerPane' })
-                  .addTo(map).bindTooltip(`Rhein-KM ${estimate.km.toFixed(2)}`, { direction: 'top', offset: [0, -8], permanent: true, className: 'gps-km-tooltip' });
-              } else {
-                userLocationMarker.setLatLng(loc);
-              }
-            }, () => {}, { timeout: 8000, enableHighAccuracy: true });
-          }
-        }, 150);
-      }
-    }
-
-    function captureGPSAndOpenForm() {
-      if (!navigator.geolocation) {
-        showStatus('GPS wird nicht unterstützt.', 'error');
-        return;
-      }
-      showStatus('Standort wird ermittelt …');
-      navigator.geolocation.getCurrentPosition(position => {
-        const { latitude, longitude } = position.coords;
-        map?.setView([latitude, longitude], 15);
-        setLocationAndOpenForm(latitude, longitude);
-      }, () => showStatus('Standort konnte nicht ermittelt werden.', 'error'),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
-    }
-
-    function setLocationAndOpenForm(lat, lng) {
-      const estimate = calculateRhineKm(lat, lng);
-      $('catch-lat').value = String(lat);
-      $('catch-lng').value = String(lng);
-      $('catch-km').value = estimate.km.toFixed(2);
-      $('selected-location-text').textContent = `📍 Rhein-KM geschätzt: ${estimate.km.toFixed(2)} · Koordinaten ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-      if (currentTempMarker && map) map.removeLayer(currentTempMarker);
-      if (map) currentTempMarker = L.marker([lat, lng]).addTo(map).bindPopup('Ausgewählter Fangort');
-      showPage('form');
-    }
-
-    function resetPhoto() {
-      pendingPhoto = null;
-      $('catch-photo-data').value = '';
-      $('photo-input').value = '';
-      $('photo-preview').removeAttribute('src');
-      $('photo-preview').style.display = 'none';
-      $('remove-photo-btn').style.display = 'none';
-    }
-
-    function handlePhotoUpload(event) {
-      const file = event.target.files && event.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        const img = new Image();
-        img.onload = () => {
-          const maxDim = 1200;
-          const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-          const canvas = document.createElement('canvas');
-          canvas.width = Math.round(img.width * scale);
-          canvas.height = Math.round(img.height * scale);
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          pendingPhoto = canvas.toDataURL('image/jpeg', 0.72);
-          $('catch-photo-data').value = pendingPhoto;
-          $('photo-preview').src = pendingPhoto;
-          $('photo-preview').style.display = 'block';
-          $('remove-photo-btn').style.display = 'inline-block';
-        };
-        img.src = reader.result;
-      };
-      reader.readAsDataURL(file);
-    }
-
-    function showPage(pageId) {
-      document.querySelectorAll('.view-page').forEach(el => el.classList.toggle('active', el.id === `page-${pageId}`));
-      document.querySelectorAll('.nav-btn').forEach(el => el.classList.toggle('active', el.dataset.page === pageId));
-      if (pageId === 'map' && map) {
-        setTimeout(() => map.invalidateSize(), 150);
-        startLocationTracking();
-      }
-    }
-
-    function clearTempMarker() {
-      if (currentTempMarker && map) map.removeLayer(currentTempMarker);
-      currentTempMarker = null;
-    }
-
-    function setDefaultDateTime() {
-      const now = new Date();
-      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-      $('datetime').value = now.toISOString().slice(0, 16);
-    }
-
-    function resetForm() {
-      $('catch-form').reset();
-      $('catch-id').value = '';
-      $('catch-lat').value = '';
-      $('catch-lng').value = '';
-      $('catch-km').value = '';
-      $('catch-photo-data').value = '';
-      $('form-heading').textContent = 'Neuen Fang eintragen';
-      resetPhoto();
-      setDefaultDateTime();
-      editingId = null;
-    }
-
-    async function saveCatch(event) {
-      event.preventDefault();
-      const lat = Number($('catch-lat').value);
-      const lng = Number($('catch-lng').value);
-      const length = Number($('length').value);
-      const datetime = $('datetime').value;
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-        showStatus('Bitte zuerst einen Fangort auf der Karte auswählen.', 'error');
-        return;
-      }
-      const baitType = $('bait-type').value;
-      const baitWeight = $('bait-weight').value;
-      const existing = editingId ? catches.find(c => String(c.id) === String(editingId)) : null;
-      const photo = $('catch-photo-data').value || (existing ? existing.photo : null);
-      const newCatch = {
-        id: editingId || `${Date.now()}`,
-        species: $('species').value,
-        length,
-        depth: $('depth').value ? Number($('depth').value) : null,
-        bait: baitWeight ? `${baitType} (${baitWeight})` : baitType,
-        datetime,
-        notes: $('notes').value.trim(),
-        km: $('catch-km').value,
-        photo,
-        lat,
-        lng
-      };
-
+  async function fetchKmElements() {
+    const coords = refPoints.map(p => `${p.lat},${p.lng}`).join(',');
+    const q = `[out:json][timeout:90];(node["waterway"="milestone"]["distance"](around:20000,${coords});node["waterway"="milestone"]["river:waterway_distance"](around:20000,${coords}););out body;`;
+    let lastErr;
+    for (const url of OVERPASS) {
+      const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 70000);
       try {
-        await dbSaveCatch(newCatch);
-        catches = await dbLoadCatches();
-        populateYearFilter();
-        clearTempMarker();
-        resetForm();
-        renderCatches();
-        showPage('map');
-        showStatus(editingId ? 'Fang aktualisiert.' : 'Fang gespeichert.');
-      } catch (err) {
-        showStatus('Speichern in Datenbank fehlgeschlagen.', 'error');
-      }
+        const r = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(q),
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, signal: ctl.signal });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return (await r.json()).elements || [];
+      } catch (e) { lastErr = e; } finally { clearTimeout(to); }
     }
+    throw lastErr;
+  }
 
-    function editCatch(id) {
-      const c = catches.find(item => String(item.id) === String(id));
-      if (!c) return;
-      editingId = c.id;
-      $('catch-id').value = String(c.id);
-      $('species').value = c.species;
-      $('length').value = String(c.length);
-      $('bait-type').value = c.bait.replace(/\s*\([^)]*\)\s*$/, '');
-      $('depth').value = c.depth == null ? '' : String(c.depth);
-      $('datetime').value = c.datetime;
-      $('notes').value = c.notes || '';
-      $('catch-lat').value = String(c.lat);
-      $('catch-lng').value = String(c.lng);
-      $('catch-km').value = c.km || calculateRhineKm(c.lat, c.lng).km.toFixed(2);
-      $('selected-location-text').textContent = `📍 Rhein-KM: ${$('catch-km').value}`;
-      pendingPhoto = c.photo || null;
-      $('catch-photo-data').value = c.photo || '';
-      if (c.photo) {
-        $('photo-preview').src = c.photo;
-        $('photo-preview').style.display = 'block';
-        $('remove-photo-btn').style.display = 'inline-block';
-      } else resetPhoto();
-      $('form-heading').textContent = 'Fang bearbeiten';
-      showPage('form');
+  function readKmCache() {
+    try {
+      const o = JSON.parse(localStorage.getItem(KM_CACHE_KEY));
+      if (o && Array.isArray(o.pts) && o.pts.length >= 100) return o;
+    } catch (e) { /* ignorieren */ }
+    return null;
+  }
+  function writeKmCache(pts) {
+    try { localStorage.setItem(KM_CACHE_KEY, JSON.stringify({ t: Date.now(), pts })); } catch (e) { /* ignorieren */ }
+  }
+
+  async function loadKmData() {
+    const cached = readKmCache();
+    if (cached) {
+      kmLine = cached.pts;
+      refreshKmLayer();
+      if (Date.now() - cached.t < KM_TTL) return;
     }
-
-    async function deleteCatch(id) {
-      const c = catches.find(item => String(item.id) === String(id));
-      if (!c || !confirm(`Fang "${c.species} – ${c.length} cm" löschen?`)) return;
-      try {
-        await dbDeleteCatch(id);
-        catches = await dbLoadCatches();
-        populateYearFilter();
-        renderCatches();
-        showStatus('Fang gelöscht.');
-      } catch (err) {
-        showStatus('Löschen fehlgeschlagen.', 'error');
-      }
+    if (navigator.onLine === false) return;
+    try {
+      const pts = buildKmLine(await fetchKmElements());
+      if (pts.length < 100) throw new Error('zu wenige Marken: ' + pts.length);
+      kmLine = pts;
+      writeKmCache(pts);
+      refreshKmLayer();
+      showStatus(`Rhein-km-Daten geladen (${pts.length} Marken).`);
+    } catch (e) {
+      console.warn('Rhein-km-Daten:', e);
+      if (!kmLine) showStatus('Rhein-km-Daten nicht verfügbar – grobe Schätzung aktiv.', 'error');
     }
+  }
 
-    function makeText(tag, className, text) {
-      const el = document.createElement(tag);
-      if (className) el.className = className;
-      el.textContent = text;
-      return el;
+  function kmLabelStep(z) { return z >= 14 ? 1 : z >= 12 ? 5 : z >= 10 ? 10 : 50; }
+
+  function refreshKmLayer() {
+    if (!map) return;
+    if (!kmLayer) kmLayer = L.layerGroup();
+    kmLayer.clearLayers();
+    if (!kmVisible || !kmLine) { if (map.hasLayer(kmLayer)) map.removeLayer(kmLayer); return; }
+    if (!map.hasLayer(kmLayer)) kmLayer.addTo(map);
+    const step = kmLabelStep(map.getZoom()), bounds = map.getBounds().pad(0.2);
+    let n = 0;
+    for (const p of kmLine) {
+      if (n >= 250) break;
+      const r = p.km / step;
+      if (Math.abs(r - Math.round(r)) * step > 0.06) continue;
+      if (!bounds.contains([p.lat, p.lng])) continue;
+      L.circleMarker([p.lat, p.lng], { radius: 4, color: '#fff', weight: 1.5, fillColor: '#1b365d', fillOpacity: 1, interactive: false })
+        .bindTooltip(`km ${Math.round(p.km * 10) / 10}`, { permanent: true, direction: 'right', offset: [6, 0], className: 'km-label' })
+        .addTo(kmLayer);
+      n++;
     }
+  }
 
-    function renderCatches() {
-      if (map) {
-        catchMarkers.forEach(marker => map.removeLayer(marker));
-        catchMarkers = [];
-      }
+  function toggleKm() {
+    kmVisible = !kmVisible;
+    $('km-toggle-btn').textContent = `Rhein-km: ${kmVisible ? 'an' : 'aus'}`;
+    $('km-toggle-btn').setAttribute('aria-pressed', String(kmVisible));
+    refreshKmLayer();
+    if (kmVisible && !kmLine) loadKmData();
+  }
 
-      const speciesFilter = $('filter-species').value;
-      const yearFilter = $('filter-year').value;
-
-      const filtered = catches.filter(c => {
-        if (speciesFilter && c.species !== speciesFilter) return false;
-        if (yearFilter && (!c.datetime || !c.datetime.startsWith(yearFilter))) return false;
-        return true;
-      });
-
-      const sorted = [...filtered].sort((a, b) => Date.parse(b.datetime) - Date.parse(a.datetime));
-      const list = $('catch-list');
-      list.replaceChildren();
-      let maxLen = 0;
-      const baitCounts = new Map();
-
-      sorted.forEach(c => {
-        maxLen = Math.max(maxLen, Number(c.length) || 0);
-        const baitKey = c.bait || 'Unbekannt';
-        baitCounts.set(baitKey, (baitCounts.get(baitKey) || 0) + 1);
-
-        if (map && Number.isFinite(c.lat) && Number.isFinite(c.lng)) {
-          const marker = L.marker([c.lat, c.lng]).addTo(map);
-          const popup = document.createElement('div');
-          popup.appendChild(makeText('strong', '', `${c.species} (${c.length} cm)`));
-          popup.appendChild(makeText('div', '', `Rhein-KM: ${c.km || 'unbekannt'}`));
-          popup.appendChild(makeText('div', '', `Köder: ${c.bait}`));
-          if (c.photo) {
-            const img = document.createElement('img');
-            img.src = c.photo;
-            img.className = 'popup-img';
-            popup.appendChild(img);
-          }
-          marker.bindPopup(popup);
-          catchMarkers.push(marker);
-        }
-
-        const card = document.createElement('article');
-        card.className = 'catch-card';
-        if (c.photo) {
-          const img = document.createElement('img');
-          img.src = c.photo;
-          img.className = 'catch-card-img';
-          card.appendChild(img);
-        }
-        const info = document.createElement('div');
-        info.className = 'catch-card-info';
-        const species = makeText('div', 'species', `${c.species} – ${c.length} cm `);
-        species.appendChild(makeText('span', 'km-badge', `KM ~${c.km || '–'}`));
-        info.appendChild(species);
-        info.appendChild(makeText('div', 'details', `Köder: ${c.bait}`));
-        info.appendChild(makeText('div', 'details', new Date(c.datetime).toLocaleString('de-DE')));
-        info.addEventListener('click', () => {
-          showPage('map');
-          if (map) setTimeout(() => map.setView([c.lat, c.lng], 15), 150);
-        });
-        card.appendChild(info);
-
-        const actions = document.createElement('div');
-        actions.style.display = 'flex';
-        actions.style.flexDirection = 'column';
-        actions.style.gap = '5px';
-        const edit = document.createElement('button');
-        edit.type = 'button'; edit.className = 'btn btn-secondary'; edit.textContent = 'Bearbeiten';
-        edit.addEventListener('click', () => editCatch(c.id));
-        const del = document.createElement('button');
-        del.type = 'button'; del.className = 'delete-btn'; del.textContent = '🗑️';
-        del.addEventListener('click', () => deleteCatch(c.id));
-        actions.append(edit, del);
-        card.appendChild(actions);
-        list.appendChild(card);
-      });
-
-      if (!sorted.length) list.appendChild(makeText('div', 'empty-state', 'Keine Fänge gefunden.'));
-      
-      $('stat-total').textContent = String(catches.length);
-      let overallMaxLen = 0;
-      const overallBaitCounts = new Map();
-      catches.forEach(c => {
-        overallMaxLen = Math.max(overallMaxLen, Number(c.length) || 0);
-        const bk = c.bait || 'Unbekannt';
-        overallBaitCounts.set(bk, (overallBaitCounts.get(bk) || 0) + 1);
-      });
-      $('stat-max-len').textContent = overallMaxLen > 0 ? `${overallMaxLen} cm` : '–';
-      let topBait = '–', maxCount = 0;
-      for (const [bait, count] of overallBaitCounts.entries()) {
-        if (count > maxCount) { maxCount = count; topBait = bait; }
-      }
-      $('stat-top-bait').textContent = topBait;
+  async function recalcAllKm() {
+    if (!kmLine) { showStatus('Rhein-km-Daten noch nicht geladen. Bitte online die Karte öffnen und kurz warten.', 'error'); return; }
+    if (!confirm('Rhein-km aller Fänge mit den genaueren Daten neu berechnen? Bitte vorher ein Backup machen.')) return;
+    try {
+      const upd = catches.map(c => ({ ...c, km: kmOf(c.lat, c.lng) }));
+      await dbImport(upd);
+      catches = upd;
+      renderAll();
+      showStatus(`${upd.length} Fänge aktualisiert.`);
+    } catch (e) {
+      showStatus('Neuberechnung fehlgeschlagen.', 'error');
     }
+  }
 
-    async function exportCatches() {
-      const dataStr = JSON.stringify(catches, null, 2);
-      const filename = `rheinfangbuch-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  // ---------- Dropdowns & Filter ----------
+  function populateDropdowns() {
+    const length = $('length');
+    for (let i = 1; i <= 150; i++) length.add(new Option(`${i} cm`, String(i)));
+    const weight = $('bait-weight');
+    for (let i = 1; i <= 60; i++) weight.add(new Option(`${i} g`, `${i}g`));
+    const depth = $('depth');
+    for (let d = 0.5; d <= 15; d += 0.5) depth.add(new Option(`${d.toFixed(1)} m`, d.toFixed(1)));
+  }
 
-      const blob = new Blob([dataStr], { type: 'application/json;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      showStatus('Backup heruntergeladen.');
-    }
+  function populateYearFilter() {
+    const sel = $('filter-year'), cur = sel.value;
+    const years = [...new Set(catches.map(c => c.datetime.slice(0, 4)))].sort().reverse();
+    while (sel.options.length > 1) sel.remove(1);
+    years.forEach(y => sel.add(new Option(y, y)));
+    sel.value = years.includes(cur) ? cur : '';
+  }
 
-    async function importCatches(event) {
-      const file = event.target.files && event.target.files[0];
-      event.target.value = '';
-      if (!file) return;
-      try {
-        const text = await file.text();
-        const parsed = JSON.parse(text);
-        if (!Array.isArray(parsed)) throw new Error('Ungültig');
-        const valid = parsed.map(normalizeCatch);
-        const mergedMap = new Map();
-        catches.forEach(c => mergedMap.set(c.id, c));
-        valid.forEach(c => mergedMap.set(c.id, c));
-        const mergedList = Array.from(mergedMap.values());
-        
-        await dbClearAndImport(mergedList);
-        catches = await dbLoadCatches();
-        populateYearFilter();
-        renderCatches();
-        showStatus(`${valid.length} Fänge importiert.`);
-      } catch (error) {
-        showStatus('Import fehlgeschlagen.', 'error');
-      }
-    }
+  // ---------- Karte ----------
+  function initMap() {
+    if (!window.L) { showStatus('Karte konnte nicht geladen werden (offline?).', 'error'); return; }
+    map = L.map('map').setView([49.95, 8.29], 11);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, attribution: '© OpenStreetMap-Mitwirkende'
+    }).addTo(map);
+    markerLayer = L.layerGroup().addTo(map);
+    map.on('moveend', refreshKmLayer);
 
-    $('home-map-btn').addEventListener('click', openMapWithGPS);
-    $('capture-gps-btn').addEventListener('click', captureGPSAndOpenForm);
-    $('cancel-form-btn').addEventListener('click', () => { clearTempMarker(); resetForm(); showPage('map'); });
-    $('adjust-location-btn').addEventListener('click', () => showPage('map'));
-    $('photo-input').addEventListener('change', handlePhotoUpload);
-    $('remove-photo-btn').addEventListener('click', resetPhoto);
-    $('catch-form').addEventListener('submit', saveCatch);
-    $('export-btn').addEventListener('click', exportCatches);
-    $('import-btn').addEventListener('click', () => $('import-file').click());
-    $('import-file').addEventListener('change', importCatches);
-    $('filter-species').addEventListener('change', renderCatches);
-    $('filter-year').addEventListener('change', renderCatches);
-    document.querySelectorAll('.nav-btn').forEach(btn => btn.addEventListener('click', () => showPage(btn.dataset.page)));
-
-    populateDropdowns();
-    setDefaultDateTime();
-    initDB().then(() => {
-      initMap();
-      showPage('home');
+    restrictedZonesCenter.forEach(z => {
+      const icon = L.divIcon({ className: 'zone-badge-icon', html: '🚫 Angelverbot', iconSize: [85, 32], iconAnchor: [42, 16] });
+      const box = document.createElement('div');
+      box.style.cssText = 'font-family:sans-serif;max-width:220px';
+      const t = makeText('strong', '', '⛔ Angelverbot / NSG'); t.style.color = '#b91c1c';
+      const n = makeText('div', '', z.name); n.style.fontWeight = '700';
+      const l = makeText('div', '', z.label); l.style.cssText = 'color:#0284c7;font-size:.78rem;font-weight:600';
+      const d = makeText('p', '', z.desc); d.style.cssText = 'font-size:.78rem;margin:6px 0 0;line-height:1.3';
+      const h = makeText('p', '', ZONE_HINT); h.style.cssText = 'font-size:.7rem;margin:6px 0 0;color:#64748b';
+      box.append(t, n, l, d, h);
+      L.marker([z.lat, z.lng], { icon }).addTo(map).bindPopup(box);
     });
 
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js').catch(err => console.log('SW registration failed:', err));
-      });
+    map.on('popupclose', () => { lastPopupClose = Date.now(); });
+    map.on('click', e => {
+      if (Date.now() - lastPopupClose < 300) return; // Tap zum Schließen eines Popups ignorieren
+      const b = makeText('button', 'btn', 'Hier Fang eintragen');
+      b.type = 'button';
+      b.addEventListener('click', () => { map.closePopup(); setLocationAndOpenForm(e.latlng.lat, e.latlng.lng); });
+      L.popup().setLatLng(e.latlng).setContent(b).openOn(map);
+    });
+    renderAll();
+    refreshKmLayer();
+  }
+
+  function updateUserMarker(lat, lng) {
+    const k = kmOf(lat, lng), text = k ? `Rhein-KM ${k}` : 'Rhein-KM –', pos = [lat, lng];
+    if (!userMarker) {
+      userMarker = L.circleMarker(pos, { radius: 10, color: '#fff', weight: 3, fillColor: '#0284c7', fillOpacity: 1, bubblingMouseEvents: false })
+        .addTo(map).bindTooltip(text, { direction: 'top', offset: [0, -8], permanent: true, className: 'gps-km-tooltip' });
+    } else {
+      userMarker.setLatLng(pos);
+      userMarker.setTooltipContent(text);
     }
-  })();
-  </script>
+  }
+
+  function startTracking() {
+    if (!map || !navigator.geolocation || watchId !== null) return;
+    watchId = navigator.geolocation.watchPosition(p => {
+      const { latitude, longitude } = p.coords;
+      updateUserMarker(latitude, longitude);
+      if (!centered) { map.setView([latitude, longitude], 14); centered = true; }
+    }, err => {
+      if (err.code === 1) showStatus('Standortzugriff blockiert.', 'error');
+    }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 3000 });
+  }
+
+  function stopTracking() {
+    if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+  }
+
+  function openMapWithGPS() {
+    if (!navigator.geolocation) showStatus('GPS wird von diesem Browser nicht unterstützt.', 'error');
+    centered = false;
+    showPage('map');
+    if (map && userMarker) { map.setView(userMarker.getLatLng(), 14); centered = true; }
+  }
+
+  function captureGPSAndOpenForm() {
+    if (!navigator.geolocation) { showStatus('GPS wird nicht unterstützt.', 'error'); return; }
+    showStatus('Standort wird ermittelt …');
+    navigator.geolocation.getCurrentPosition(p => {
+      const { latitude, longitude } = p.coords;
+      if (map) map.setView([latitude, longitude], 15);
+      setLocationAndOpenForm(latitude, longitude);
+    }, () => showStatus('Standort konnte nicht ermittelt werden.', 'error'),
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
+  }
+
+  function clearTempMarker() {
+    if (tempMarker && map) map.removeLayer(tempMarker);
+    tempMarker = null;
+  }
+
+  function setLocationAndOpenForm(lat, lng) {
+    const km = kmOf(lat, lng);
+    $('catch-lat').value = String(lat);
+    $('catch-lng').value = String(lng);
+    $('catch-km').value = km;
+    $('selected-location-text').textContent =
+      `📍 ${km ? `Rhein-KM geschätzt: ${km}` : 'Rhein-KM nicht ermittelbar (weit vom Rhein)'} · Koordinaten ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    clearTempMarker();
+    if (map) tempMarker = L.marker([lat, lng]).addTo(map).bindPopup('Ausgewählter Fangort');
+    showPage('form');
+  }
+
+  // ---------- Seiten ----------
+  function showPage(id) {
+    currentPage = id;
+    document.querySelectorAll('.view-page').forEach(el => el.classList.toggle('active', el.id === `page-${id}`));
+    document.querySelectorAll('.nav-btn').forEach(el => el.classList.toggle('active', el.dataset.page === id));
+    if (id === 'map' && map) { setTimeout(() => map.invalidateSize(), 150); startTracking(); }
+    else stopTracking();
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopTracking();
+    else if (currentPage === 'map') startTracking();
+  });
+
+  // ---------- Foto ----------
+  function showPhoto(src) {
+    const p = $('photo-preview');
+    p.src = src;
+    p.style.display = 'block';
+    $('remove-photo-btn').style.display = 'inline-block';
+  }
+  function resetPhoto() {
+    photoData = null;
+    $('photo-input').value = '';
+    const p = $('photo-preview');
+    p.removeAttribute('src');
+    p.style.display = 'none';
+    $('remove-photo-btn').style.display = 'none';
+  }
+  function handlePhotoUpload(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const s = Math.min(1, 1200 / Math.max(img.width, img.height));
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(img.width * s);
+      cv.height = Math.round(img.height * s);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      URL.revokeObjectURL(url);
+      photoData = cv.toDataURL('image/jpeg', 0.72);
+      showPhoto(photoData);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); showStatus('Foto konnte nicht gelesen werden (z. B. HEIC).', 'error'); };
+    img.src = url;
+  }
+
+  // ---------- Formular ----------
+  function resetForm() {
+    $('catch-form').reset();
+    ['catch-id', 'catch-lat', 'catch-lng', 'catch-km'].forEach(i => { $(i).value = ''; });
+    $('form-heading').textContent = 'Neuen Fang eintragen';
+    $('selected-location-text').textContent = '📍 Bitte zuerst einen Standort auf der Karte auswählen.';
+    resetPhoto();
+    $('datetime').value = toLocalInput();
+    editingId = null;
+  }
+
+  async function saveCatch(e) {
+    e.preventDefault();
+    const lat = Number($('catch-lat').value), lng = Number($('catch-lng').value);
+    if (!$('catch-lat').value || !$('catch-lng').value || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+      showStatus('Bitte zuerst einen Fangort auf der Karte auswählen.', 'error');
+      return;
+    }
+    const type = $('bait-type').value, w = $('bait-weight').value, wasEdit = !!editingId;
+    const c = {
+      id: editingId || uid(),
+      species: $('species').value,
+      length: Number($('length').value),
+      depth: $('depth').value ? Number($('depth').value) : null,
+      bait: w ? `${type} (${w})` : type,
+      datetime: $('datetime').value,
+      notes: $('notes').value.trim(),
+      km: $('catch-km').value,
+      photo: photoData,
+      lat, lng
+    };
+    try {
+      await dbSave(c);
+      const i = catches.findIndex(x => x.id === c.id);
+      if (i >= 0) catches[i] = c; else catches.push(c);
+      clearTempMarker();
+      resetForm();
+      populateYearFilter();
+      renderAll();
+      showPage('map');
+      showStatus(wasEdit ? 'Fang aktualisiert.' : 'Fang gespeichert.');
+    } catch (err) {
+      console.error(err);
+      showStatus('Speichern in Datenbank fehlgeschlagen.', 'error');
+    }
+  }
+
+  function editCatch(id) {
+    const c = catches.find(x => x.id === id);
+    if (!c) return;
+    resetForm();
+    editingId = c.id;
+    const b = splitBait(c.bait);
+    setSelect('species', c.species);
+    setSelect('length', c.length);
+    setSelect('bait-type', b.type);
+    setSelect('bait-weight', b.weight);
+    setSelect('depth', c.depth == null ? '' : Number(c.depth).toFixed(1));
+    $('datetime').value = c.datetime;
+    $('notes').value = c.notes || '';
+    $('catch-id').value = c.id;
+    $('catch-lat').value = String(c.lat);
+    $('catch-lng').value = String(c.lng);
+    const km = c.km || kmOf(c.lat, c.lng);
+    $('catch-km').value = km;
+    $('selected-location-text').textContent = `📍 ${km ? `Rhein-KM: ${km}` : 'Rhein-KM nicht ermittelbar'}`;
+    if (c.photo) { photoData = c.photo; showPhoto(c.photo); }
+    $('form-heading').textContent = 'Fang bearbeiten';
+    showPage('form');
+  }
+
+  async function deleteCatch(id) {
+    const c = catches.find(x => x.id === id);
+    if (!c || !confirm(`Fang "${c.species} – ${c.length} cm" löschen?`)) return;
+    try {
+      await dbDelete(id);
+      catches = catches.filter(x => x.id !== id);
+      populateYearFilter();
+      renderAll();
+      showStatus('Fang gelöscht.');
+    } catch (err) {
+      showStatus('Löschen fehlgeschlagen.', 'error');
+    }
+  }
+
+  // ---------- Rendering ----------
+  function filteredCatches() {
+    const sp = $('filter-species').value, yr = $('filter-year').value;
+    return catches
+      .filter(c => (!sp || c.species === sp) && (!yr || c.datetime.startsWith(yr)))
+      .sort((a, b) => Date.parse(b.datetime) - Date.parse(a.datetime));
+  }
+
+  function buildPopup(c) {
+    const d = document.createElement('div');
+    d.append(
+      makeText('strong', '', `${c.species} (${c.length} cm)`),
+      makeText('div', '', `Rhein-KM: ${c.km || 'unbekannt'}`),
+      makeText('div', '', `Köder: ${c.bait}`)
+    );
+    if (c.photo) {
+      const i = document.createElement('img');
+      i.src = c.photo; i.className = 'popup-img';
+      d.append(i);
+    }
+    return d;
+  }
+
+  function buildCard(c) {
+    const card = document.createElement('article');
+    card.className = 'catch-card';
+    if (c.photo) {
+      const i = document.createElement('img');
+      i.src = c.photo; i.className = 'catch-card-img';
+      i.loading = 'lazy'; i.decoding = 'async'; i.alt = `Foto: ${c.species}`;
+      card.append(i);
+    }
+    const info = document.createElement('div');
+    info.className = 'catch-card-info';
+    info.tabIndex = 0;
+    info.setAttribute('role', 'button');
+    const sp = makeText('div', 'species', `${c.species} – ${c.length} cm `);
+    sp.append(makeText('span', 'km-badge', `KM ~${c.km || '–'}`));
+    info.append(sp, makeText('div', 'details', `Köder: ${c.bait}`),
+      makeText('div', 'details', new Date(c.datetime).toLocaleString('de-DE')));
+    const go = () => { showPage('map'); if (map) setTimeout(() => map.setView([c.lat, c.lng], 15), 150); };
+    info.addEventListener('click', go);
+    info.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;flex-direction:column;gap:5px';
+    const edit = makeText('button', 'btn btn-secondary', 'Bearbeiten');
+    edit.type = 'button';
+    edit.addEventListener('click', () => editCatch(c.id));
+    const del = makeText('button', 'delete-btn', '🗑️');
+    del.type = 'button';
+    del.setAttribute('aria-label', 'Fang löschen');
+    del.addEventListener('click', () => deleteCatch(c.id));
+    actions.append(edit, del);
+    card.append(info, actions);
+    return card;
+  }
+
+  function renderAll() {
+    const list = filteredCatches(), frag = document.createDocumentFragment();
+    list.forEach(c => frag.append(buildCard(c)));
+    if (!list.length) frag.append(makeText('div', 'empty-state', 'Keine Fänge gefunden.'));
+    $('catch-list').replaceChildren(frag);
+
+    if (markerLayer) {
+      markerLayer.clearLayers();
+      list.forEach(c => L.marker([c.lat, c.lng]).addTo(markerLayer).bindPopup(() => buildPopup(c)));
+    }
+
+    let max = 0;
+    const counts = new Map();
+    catches.forEach(c => {
+      max = Math.max(max, c.length || 0);
+      const t = splitBait(c.bait).type;
+      counts.set(t, (counts.get(t) || 0) + 1);
+    });
+    let top = '–', n = 0;
+    counts.forEach((v, k) => { if (v > n) { n = v; top = k; } });
+    $('stat-total').textContent = String(catches.length);
+    $('stat-max-len').textContent = max > 0 ? `${max} cm` : '–';
+    $('stat-top-bait').textContent = top;
+  }
+
+  // ---------- Export / Import ----------
+  function exportCatches() {
+    const blob = new Blob([JSON.stringify(catches, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `rheinfangbuch-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    showStatus('Backup heruntergeladen.');
+  }
+
+  async function importCatches(event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      const parsed = JSON.parse(await file.text());
+      if (!Array.isArray(parsed)) throw new Error('Ungültig');
+      const valid = parsed.filter(validateCatch).map(normalizeCatch);
+      const skipped = parsed.length - valid.length;
+      await dbImport(valid); // fügt hinzu bzw. überschreibt gleiche IDs, löscht nichts
+      catches = await dbLoad();
+      populateYearFilter();
+      renderAll();
+      showStatus(`${valid.length} Fänge importiert${skipped ? `, ${skipped} übersprungen` : ''}.`);
+    } catch (err) {
+      showStatus('Import fehlgeschlagen.', 'error');
+    }
+  }
+
+  // ---------- Start ----------
+  $('home-map-btn').addEventListener('click', openMapWithGPS);
+  $('capture-gps-btn').addEventListener('click', captureGPSAndOpenForm);
+  $('cancel-form-btn').addEventListener('click', () => { clearTempMarker(); resetForm(); showPage('map'); });
+  $('adjust-location-btn').addEventListener('click', () => showPage('map'));
+  $('photo-input').addEventListener('change', handlePhotoUpload);
+  $('remove-photo-btn').addEventListener('click', resetPhoto);
+  $('catch-form').addEventListener('submit', saveCatch);
+  $('export-btn').addEventListener('click', exportCatches);
+  $('import-btn').addEventListener('click', () => $('import-file').click());
+  $('import-file').addEventListener('change', importCatches);
+  $('filter-species').addEventListener('change', renderAll);
+  $('filter-year').addEventListener('change', renderAll);
+  document.querySelectorAll('.nav-btn').forEach(b => b.addEventListener('click', () => showPage(b.dataset.page)));
+
+  $('km-toggle-btn').addEventListener('click', toggleKm);
+  $('recalc-km-btn').addEventListener('click', recalcAllKm);
+
+  populateDropdowns();
+  $('datetime').value = toLocalInput();
+  initDB().then(() => {
+    initMap();
+    loadKmData();
+    populateYearFilter();
+    renderAll();
+    showPage('home');
+  });
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(err => console.log('SW registration failed:', err));
+    });
+  }
+})();
+</script>
 </body>
 </html>
