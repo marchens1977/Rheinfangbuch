@@ -1,4 +1,4 @@
-!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
   <meta charset="UTF-8">
@@ -259,6 +259,7 @@
   let catches = [], editingId = null, photoData = null;
   let statusTimer = null, lastPopupClose = 0;
   let kmLine = null, kmLayer = null, kmVisible = true;
+  const zoneMarkers = [];
   const KM_CACHE_KEY = 'rheinfangbuch_km_v1', KM_TTL = 60 * 24 * 3600 * 1000;
   const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
 
@@ -480,6 +481,7 @@
     const cached = readKmCache();
     if (cached) {
       kmLine = cached.pts;
+      placeZoneMarkers();
       refreshKmLayer();
       if (Date.now() - cached.t < KM_TTL) return;
     }
@@ -489,12 +491,30 @@
       if (pts.length < 100) throw new Error('zu wenige Marken: ' + pts.length);
       kmLine = pts;
       writeKmCache(pts);
+      placeZoneMarkers();
       refreshKmLayer();
       showStatus(`Rhein-km-Daten geladen (${pts.length} Marken).`);
     } catch (e) {
       console.warn('Rhein-km-Daten:', e);
       if (!kmLine) showStatus('Rhein-km-Daten nicht verfügbar – grobe Schätzung aktiv.', 'error');
     }
+  }
+
+  // Position auf dem Fluss für einen Rhein-km (null, wenn keine Marken in der Nähe vorliegen)
+  function posAtKm(km) {
+    if (!kmLine || !Number.isFinite(km)) return null;
+    let lo = 0, hi = kmLine.length - 1;
+    if (km < kmLine[lo].km || km > kmLine[hi].km) return null;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (kmLine[mid].km <= km) lo = mid; else hi = mid; }
+    const a = kmLine[lo], b = kmLine[hi];
+    if (b.km - a.km > 5) return null;
+    const t = b.km === a.km ? 0 : (km - a.km) / (b.km - a.km);
+    return [a.lat + t * (b.lat - a.lat), a.lng + t * (b.lng - a.lng)];
+  }
+
+  // Verbotszonen-Kacheln an den Zonenbeginn (Start-km) auf den Flussverlauf setzen
+  function placeZoneMarkers() {
+    zoneMarkers.forEach(o => o.m.setLatLng(posAtKm(o.startKm) || [o.z.lat, o.z.lng]));
   }
 
   function kmLabelStep(z) { return z >= 14 ? 1 : z >= 12 ? 5 : z >= 10 ? 10 : 50; }
@@ -579,7 +599,9 @@
       const d = makeText('p', '', z.desc); d.style.cssText = 'font-size:.78rem;margin:6px 0 0;line-height:1.3';
       const h = makeText('p', '', ZONE_HINT); h.style.cssText = 'font-size:.7rem;margin:6px 0 0;color:#64748b';
       box.append(t, n, l, d, h);
-      L.marker([z.lat, z.lng], { icon }).addTo(map).bindPopup(box);
+      const m = L.marker([z.lat, z.lng], { icon }).addTo(map).bindPopup(box);
+      const startKm = parseFloat(((String(z.label).match(/km\s*([\d.,]+)/) || [])[1] || '').replace(',', '.'));
+      zoneMarkers.push({ z, m, startKm });
     });
 
     map.on('popupclose', () => { lastPopupClose = Date.now(); });
@@ -591,6 +613,7 @@
       L.popup().setLatLng(e.latlng).setContent(b).openOn(map);
     });
     renderAll();
+    placeZoneMarkers();
     refreshKmLayer();
   }
 
